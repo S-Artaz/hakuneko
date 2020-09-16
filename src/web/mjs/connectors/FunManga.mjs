@@ -6,23 +6,93 @@ import Connector from '../engine/Connector.mjs';
 export default class FunManga extends Connector {
 
     /**
-     *
+     * Very similar to readmng
      */
     constructor() {
         super();
         super.id = 'funmanga';
         super.label = 'FunManga';
-        this.tags = [];
-        this.url = 'http://www.funmanga.com';
+        this.tags = [ 'manga', 'english' ];
+        this.url = 'https://www.funmanga.com';
+        this.requestOptions.headers.set( 'x-referer', this.url );
     }
 
+    /**
+     *
+     */
+    _getMangaListFromPages( mangaPageLinks, index ) {
+        index = index || 0;
+        let request = new Request( mangaPageLinks[ index ], this.requestOptions );
+        return this.fetchDOM( request, 'div.content ul.manga-list li a.manga-info-qtip', 5 )
+            .then( data => {
+                let mangaList = data.map( element => {
+                    return {
+                        id: this.getRootRelativeOrAbsoluteLink( element, request.url ),
+                        title: element.text.trim()
+                    };
+                } );
+                if( index < mangaPageLinks.length - 1 ) {
+                    return this._getMangaListFromPages( mangaPageLinks, index + 1 )
+                        .then( mangas => mangaList.concat( mangas ) );
+                } else {
+                    return Promise.resolve( mangaList );
+                }
+            } );
+    }
+
+    /**
+     *
+     */
     _getMangaList( callback ) {
-        callback( new Error( 'Please report this broken website on HakuNeko\'s GitHub project page.' ), undefined );
+        Promise.resolve( [ '' ].concat( 'abcdefghijklmnopqrstuvwxyz'.split( '' ) ) )
+            .then( data => {
+                let pageLinks = data.map( page => this.url + '/manga-list/' + page );
+                return this._getMangaListFromPages( pageLinks );
+            } )
+            .then( data => {
+                callback( null, data );
+            } )
+            .catch( error => {
+                console.error( error, this );
+                callback( error, undefined );
+            } );
     }
+
+    /**
+     *
+     */
     _getChapterList( manga, callback ) {
-        callback( new Error( 'Please report this broken website on HakuNeko\'s GitHub project page.' ), undefined );
+        let request = new Request( this.url + manga.id, this.requestOptions );
+        this.fetchDOM( request, 'div#chapter_list ul.chapter-list li a span.val' )
+            .then( data => {
+                let chapterList = data.map( element => {
+                    return {
+                        id: this.getRootRelativeOrAbsoluteLink( element.closest( 'a' ), request.url ),
+                        title: element.innerText.replace( manga.title, '' ).replace( /\s*-/, '' ).trim(),
+                        language: ''
+                    };
+                } );
+                callback( null, chapterList );
+            } )
+            .catch( error => {
+                console.error( error, manga );
+                callback( error, undefined );
+            } );
     }
+
+    /**
+     *
+     */
     _getPageList( manga, chapter, callback ) {
-        callback( new Error( 'Please report this broken website on HakuNeko\'s GitHub project page.' ), undefined );
+        let request = new Request( this.url + chapter.id + '/all-pages', this.requestOptions );
+        this.fetchDOM( request, 'div.inner-page source.img-responsive' )
+            .then( data => {
+                let pageLinks = data.map( element => this.createConnectorURI( this.getAbsolutePath( element, request.url ) ) );
+                callback( null, pageLinks );
+            } )
+            .catch( error => {
+                console.error( error, chapter );
+                callback( error, undefined );
+            } );
     }
 }
